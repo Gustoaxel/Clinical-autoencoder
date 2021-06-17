@@ -29,6 +29,9 @@ $ conda install -c anaconda pip
 $ cd path/to/project
 $ pip install -r requirements.txt (Warning, before launching this command you must go to the directory where the requirements.txt is located)
 ```
+
+To install captum make sure you have a c++ compiler 
+
 ## How to use : 
 
 Everything is ready, now you have to open the code in spyder (top left button). 

@@ -2,6 +2,8 @@
 ***
 
 This is an implementation of : Efficient classification using the latent spaceof a Non-Parametric Supervised Autoencoderfor metabolomics datasets of clinical studies. In this repository, you will find the code to perform the clinical study described in the paper. For the statistical and comparison part, you can find it here
+Please cite 
+
 
 ## Table of Contents
 ***

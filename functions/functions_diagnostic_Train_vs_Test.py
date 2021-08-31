@@ -2022,7 +2022,7 @@ def RunAutoEncoder_unsupervised(net, criterion, optimizer, lr_scheduler, train_d
 
 from sklearn.preprocessing import scale as scale
 
-def ReadData(file_name = 'MyeloidProgenitors.csv', TIRO_FORMAT = True,model='', doScale = False):
+def ReadData(file_name = 'MyeloidProgenitors.csv', file_name2 = "LUNG.csv", TIRO_FORMAT = True,model='', doScale = False):
     """Read different data(csv, npy, mat) files  
     * csv has two format, one is data of facebook, another is TIRO format.
     
@@ -2073,24 +2073,47 @@ def ReadData(file_name = 'MyeloidProgenitors.csv', TIRO_FORMAT = True,model='', 
             feature_name = data_pd['Name'].values.astype(str)[1:]
             label_name = np.unique(Y)
             patient_name = data_pd.columns[1:]
+            
+            data_pd_test = pd.read_csv('datas/'+ str(file_name2),delimiter=';', decimal=",", header=0, encoding = 'ISO-8859-1')
+            #data_pd = pd.read_csv('datas/FAIR/'+ str(file_name),delimiter=',', decimal=".", header=0, encoding = 'ISO-8859-1')
+            X_test = (data_pd_test.iloc[1:,1:].values.astype(float)).T
+            Y_test = data_pd_test.iloc[0,1:].values.astype(np.int64)
+            col_test = data_pd_test.columns.to_list()
+            if col_test[0] != 'Name' : col_test[0]='Name'
+            data_pd_test.columns = col_test
+            patient_name_test = data_pd_test.columns[1:]
+            
             # Do standardization
             X = np.log(abs(X+1))                         # Transformation
+            X_test = np.log(abs(X_test +1))
             #X = np.log(X+1) 
             X1 = X[np.where(Y==label_name[0])[0],:]   
             X2 = X[np.where(Y==label_name[1])[0],:]
+            
+            X1_test = X_test[np.where(Y_test==label_name[0])[0],:]   
+            X2_test = X_test[np.where(Y_test==label_name[1])[0],:]
+            
+            print( np.mean(np.mean(X1, axis=0)),  np.mean(np.mean(X1_test, axis=0)),  np.mean(np.mean(X2, axis=0)), np.mean( np.mean(X2_test, axis=0)))
     
             difference = np.mean(X1, axis=0)-np.mean(X2, axis=0)
     
-            RankFeature = RankFeature(difference,feature_name)
-            X = X-np.mean(X,axis=0)
+            #RankFeature = RankFeature(difference,feature_name)
+            M = np.mean(X,axis=0)
+            X = X- M
+            X_test = X_test - M
             if doScale : 
                 X = scale(X,axis=0)                     # Standardization along rows
+                X_test = scale(X_test, axis = 0)
         for index,label in enumerate(label_name):   # convert string labels to numero (0,1,2....)
             Y = np.where(Y==label,index,Y)
+            Y_test = np.where(Y_test==label,index,Y_test)
         Y = Y.astype(np.int64) 
+        Y_test = Y_test.astype(np.int64) 
+        
+
     
        
-    return X,Y,feature_name,label_name, patient_name, RankFeature
+    return X,Y,feature_name,label_name, patient_name, None , X_test, Y_test, patient_name_test
 
 def RankFeature(w,feature_names):
 

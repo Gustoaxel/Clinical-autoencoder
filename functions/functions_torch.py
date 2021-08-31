@@ -40,8 +40,12 @@ This file contains all the torch version functions from functions.py as follow:\
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
+#import functions as ff
 import pandas as pd
 import time
+from sklearn.model_selection import KFold
+
+
 
 
 from scipy import stats
@@ -54,6 +58,7 @@ from tqdm import tqdm
 
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
+from sklearn.metrics import confusion_matrix
 
 try:
     import captum 
@@ -225,7 +230,6 @@ def proj_l11ball(w2,eta,device='cpu'):
     
     if not torch.is_tensor(w2):
         Q = Q.data.numpy()    
-    
     return(Q)
     
 def proj_l11ball_line(w2,eta,device='cpu'):
@@ -698,7 +702,7 @@ class LoadDataset(torch.utils.data.Dataset):
     def __getitem__(self,i):
         return self.X[i],self.Y[i], self.ind[i]   
     
-def SpiltData(X,Y,patient_name, BATCH_SIZE=32, split_rate = 0.2, class_len = 2):
+def SpiltData(X,Y,patient_name, BATCH_SIZE=32, split_rate = 0.2):
     """ Spilt Data randomly  
     Attributes:
         X,Y: data and label 
@@ -710,16 +714,11 @@ def SpiltData(X,Y,patient_name, BATCH_SIZE=32, split_rate = 0.2, class_len = 2):
         len(train_set), len(test_set): length of train set and test set
     """
     dataset = LoadDataset(X,Y, patient_name)
-    N_test_samples = class_len
-
-    train_set, test_set = torch.utils.data.random_split(dataset, [len(dataset) -int( N_test_samples), int(N_test_samples)])
-
+    N_test_samples = round(split_rate * len(dataset))
+    train_set, test_set = torch.utils.data.random_split(dataset, [len(dataset) - N_test_samples, N_test_samples])
     train_dl = torch.utils.data.DataLoader(train_set, batch_size=BATCH_SIZE,  shuffle=True)
     test_dl = torch.utils.data.DataLoader(test_set, batch_size=1)
-    Ytest = []
-    for p in test_set:
-        Ytest.append(p[1].tolist())
-    return train_dl,test_dl,len(train_set),len(test_set) , Ytest
+    return train_dl,test_dl,len(train_set),len(test_set) 
 
 def SpiltData_unsupervised(X,Y,patient_name, BATCH_SIZE=32, split_rate = 0.2):
     """ Spilt Data randomly  
@@ -737,24 +736,11 @@ def SpiltData_unsupervised(X,Y,patient_name, BATCH_SIZE=32, split_rate = 0.2):
     #test_dl = torch.utils.data.DataLoader(dataset, batch_size=1)
     return train_dl,len(train_dl.dataset)
 
-from random import randrange
-import random
-
 def CrossVal(X,Y,patient_name, BATCH_SIZE=32, nfold=0 , seed=1 ) : 
-
-        random.seed(seed)
-        lab = np.unique(Y)
-        index = [[] for l in lab ]
-        test_index = []
-        train_index = []
-        for i in range(len(Y)) :
-            for l in lab : 
-                if l == Y[i] : 
-                    index[l].append(i)
-        for l in index : 
-            test_index.append( l.pop(randrange(len(l))))
-            train_index += l
-        print(" test index = ", test_index)
+    kf = KFold(n_splits=4 , shuffle = True , random_state = seed)
+    i = 0 
+    for train_index, test_index in kf.split(X):
+        
         X_train, X_test = X[train_index], X[test_index]
         y_train, y_test = Y[train_index], Y[test_index]
         ind_train, ind_test = patient_name[train_index], patient_name[test_index]
@@ -764,9 +750,9 @@ def CrossVal(X,Y,patient_name, BATCH_SIZE=32, nfold=0 , seed=1 ) :
         dtest = LoadDataset(X_test, y_test, ind_test)
         #_, test_set = torch.utils.data.random_split(dtest, [0])
         test_dl = torch.utils.data.DataLoader(dtest, batch_size=1)
-
-        return train_dl , test_dl ,len(dtrain),len(dtest) , y_test
-
+        if i == nfold : 
+            return train_dl , test_dl ,len(dtrain),len(dtest) , y_test
+        i+=1
         
 class FairAutoEncodert(torch.nn.Module):
     """AutoEncoder Net structure, return encode, decode 
@@ -888,7 +874,7 @@ def RunAutoEncoder(net, criterion, optimizer, lr_scheduler, train_dl, train_len,
     best_test = 0 
     for e in range(N_EPOCHS):
         t1 = time.perf_counter()
-
+        print('EPOCH:',e)
         running_loss, running_accuracy = 0, 0 
         running_classification , running_reconstruction = 0,0
         net.train()
@@ -1059,7 +1045,6 @@ def runBestNet(train_dl, test_dl, best_test, outputPath , nfold , class_len , ne
     best_value = np.zeros((1,1))
     net.load_state_dict(torch.load(str(outputPath)+"best_net"))
     net.eval()
-    First_train = True
     for i,batch in enumerate(tqdm(train_dl)):
         x = batch[0]
         labels = batch[1]
@@ -1078,19 +1063,6 @@ def runBestNet(train_dl, test_dl, best_test, outputPath , nfold , class_len , ne
                 else : 
                     class_train_correct[label] += int(c[i].item())
                 class_train_total[label] += 1
-            if First_train:
-                data_decoded_train = torch.cat((decoder_out,labels.view(-1,1)), dim = 1)
-                data_encoder_train = torch.cat((encoder_out,labels.view(-1,1)), dim = 1)
-                
-                First_train=False
-            else:
-    
-                tmp1 = torch.cat((decoder_out,labels.view(-1,1)), dim = 1)
-                data_decoded_train = torch.cat((data_decoded_train,tmp1),dim= 0)
-                    
-                tmp2 = torch.cat((encoder_out,labels.view(-1,1)), dim = 1)
-                data_encoder_train = torch.cat((data_encoder_train ,tmp2 ),dim= 0)
-        
     First = True
     for i,batch in enumerate(tqdm(test_dl)):
         with torch.no_grad():
@@ -1132,7 +1104,7 @@ def runBestNet(train_dl, test_dl, best_test, outputPath , nfold , class_len , ne
                     
                 tmp2 = torch.cat((encoder_out,labels.view(-1,1)), dim = 1)
                 data_encoder = torch.cat((data_encoder,tmp2 ),dim= 0)
-    print(best_test , class_test_correct)
+    
                 
     if best_test != sum(class_test_correct):
         print("!!!!!!! Problem !!!!!!!")
@@ -1176,11 +1148,8 @@ def runBestNet(train_dl, test_dl, best_test, outputPath , nfold , class_len , ne
     print("Saved file to ",str(outputPath))
     print("-----------------------")
     normGenes = selectf(net.state_dict()['encoder.0.weight'] , feature_name)
-    
-    #cm = confusion_matrix(np.array(Lung_decoded[:,-1].astype(int)), Y_predit)
-    #print(cm)
-    #sn.heatmap(cm , annot=True)
-    return  data_encoder, data_decoded, class_train , class_test , normGenes, correct_pred, soft, Y_true, Y_predit, data_encoder_train, data_decoded_train
+
+    return  data_encoder, data_decoded, class_train , class_test , normGenes, correct_pred, soft, Y_true, Y_predit
 
 
 def showClassResult(accuracy_train, accuracy_test,  fold_nb, label_name):
@@ -1317,7 +1286,7 @@ class CMDS_Loss(nn.Module):
     
 
 
-def ShowPcaTsne(X, Y, data_encoder, center_distance, class_len, tit, pcafit = None ):
+def ShowPcaTsne(X, Y, data_encoder, center_distance, class_len, tit  ):
     """ Visualization with PCA and Tsne
     Args:
         X: numpy - original imput matrix
@@ -1333,49 +1302,38 @@ def ShowPcaTsne(X, Y, data_encoder, center_distance, class_len, tit, pcafit = No
     color = ['#1F77B4', '#FF7F0E', '#2CA02C', '#D62728', '#9467BD','#8C564B', '#E377C2', '#BCBD22', '#17BECF', '#40004B','#762A83',\
              '#9970AB', '#C2A5CF', '#E7D4E8', '#F7F7F7','#D9F0D3', '#A6DBA0', '#5AAE61', '#1B7837', '#00441B','#8DD3C7', '#FFFFB3',\
              '#BEBADA', '#FB8072', '#80B1D3','#FDB462', '#B3DE69', '#FCCDE5', '#D9D9D9', '#BC80BD','#CCEBC5', '#FFED6F']
-
+    color_original = [color[i] for i in Y ]
     
     # Do pca for original data
     pca = PCA(n_components= 2)
-    pca_centre = PCA(n_components= 2)
     X_pca = X if class_len==2 else pca.fit(X).transform(X) 
     X_tsne = X if class_len==2 else TSNE(n_components=2).fit_transform(X)
     
     # Do pca for encoder data if cluster>2
     if data_encoder.shape[1] !=3:   # layer code_size >2  (3= 2+1 data+labels) 
         data_encoder_pca = data_encoder[:,:-1]
-        
-        if tit == "Latent Space Test" : 
-            X_encoder_pca = pcafit.transform(data_encoder_pca)
-        else : 
-            X_encoder_pca = pca.fit(data_encoder_pca).transform(data_encoder_pca)
+        X_encoder_pca = pca.fit(data_encoder_pca).transform(data_encoder_pca)
         X_encoder_tsne =  TSNE(n_components=2).fit_transform(data_encoder_pca)
         Y_encoder_pca = data_encoder[:,-1].astype(int)
     else:
         X_encoder_pca =  data_encoder[:,:-1]
         X_encoder_tsne = X_encoder_pca 
         Y_encoder_pca = data_encoder[:,-1].astype(int)
-    if tit == "Latent Space Test":
-        color_encoder = [color[i + class_len] for i in Y_encoder_pca ]
-    else :
-        color_encoder = [color[i] for i in Y_encoder_pca ]
+    color_encoder = [color[i] for i in Y_encoder_pca ]
     
     # Do pca for center_distance
     labels = np.unique(Y)
-    center_distance_pca = pca_centre.fit(center_distance).transform(center_distance)
+    center_distance_pca = pca.fit(center_distance).transform(center_distance)
     color_center_distance = [color[i] for i in labels ]
     
     # Plot
-    title2 = "Latent Space"
+    title2 = tit
 
-    
+    plt.figure()
     plt.title(title2)
-    if tit == "Latent Space Test":
-        plt.scatter(X_encoder_pca[:, 0], X_encoder_pca[:, 1], c= color_encoder , marker = 's', s=120)
-    else : 
-        plt.scatter(X_encoder_pca[:, 0], X_encoder_pca[:, 1], c= color_encoder )
-    return pca 
-    
+    plt.scatter(X_encoder_pca[:, 0], X_encoder_pca[:, 1], c= color_encoder )
+
+    plt.show()
 
 def CalculateDistance(x):
     """ calculate columns pairwise distance
@@ -1466,7 +1424,7 @@ def Reconstruction(INTERPELLATION_LAMBDA, data_encoder, net, class_len ):
         logits = net.encoder( center_decoded[target] )
         prediction = np.argmax(logits.detach().cpu().numpy())
         center_latent[target,:] = logits.cpu().detach().numpy()
-        #print("Center class: ", target, "Prediction: ", prediction)  
+        print("Center class: ", target, "Prediction: ", prediction)  
     return center_mean, center_distance
 
 def Metropolis(points,N = 1,init = 'max',sigma = 0.3,threshold=0.1):
@@ -2018,11 +1976,20 @@ def RunAutoEncoder_unsupervised(net, criterion, optimizer, lr_scheduler, train_d
         print('{} epochs trained for  {}s , {} s/epoch'.format(N_EPOCHS, sum(train_time), np.mean(train_time)))
     return  data_encoder, data_decoded, epoch_loss , net, sum(epoch_acc)/N_EPOCHS
 
+def RankFeature(w,feature_names):
 
+    df1=pd.DataFrame(feature_names,columns=['pd'])
+    df1['weights']=w
+    #=====Sort the difference based on the absolute value=========
+    df1['sort_helper'] = df1['weights'].abs()
+    df2=df1.sort_values(by='sort_helper',ascending=False).drop('sort_helper', axis=1)
+    df2["weights"]=df2["weights"]/df2.iloc[0,1]
+    #==== end_sort=============
+    return df2
 
 from sklearn.preprocessing import scale as scale
 
-def ReadData(file_name = 'MyeloidProgenitors.csv', TIRO_FORMAT = True,model='', doScale = False):
+def ReadData(file_name = 'MyeloidProgenitors.csv', model='', TIRO_FORMAT=True, doScale = True):
     """Read different data(csv, npy, mat) files  
     * csv has two format, one is data of facebook, another is TIRO format.
     
@@ -2091,17 +2058,6 @@ def ReadData(file_name = 'MyeloidProgenitors.csv', TIRO_FORMAT = True,model='', 
     
        
     return X,Y,feature_name,label_name, patient_name, RankFeature
-
-def RankFeature(w,feature_names):
-
-    df1=pd.DataFrame(feature_names,columns=['pd'])
-    df1['weights']=w
-    #=====Sort the difference based on the absolute value=========
-    df1['sort_helper'] = df1['weights'].abs()
-    df2=df1.sort_values(by='sort_helper',ascending=False).drop('sort_helper', axis=1)
-    df2["weights"]=df2["weights"]/df2.iloc[0,1]
-    #==== end_sort=============
-    return df2
 
 if __name__ == "__main__":
     print(help_info)

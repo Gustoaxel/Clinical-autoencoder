@@ -32,16 +32,18 @@ for metabolomic datasets of clinical studies.
 
 Parameters : 
     
-    - Seed (line 84)
-    - Database (line 111)
-    - Projection (line 150)
-    - Constraint ETA (line 85)
-    - Scaling (line 167)
-    - Metabolomic selection (line 161)
+    - Seed (line 86)
+    - Database Train (line 116)
+    - Database Test (line 117)
+    - Projection (line 154)
+    - Constraint ETA (line 87)
+    - Scaling (line 172)
+    - Metabolomic selection (line 165)
     
-Results_diag
-    -latent space 
+Results_diag : 
+    -Latent space 
     -Top features 
+    -Confidence score 
     
     
     
@@ -62,7 +64,7 @@ from sklearn import metrics
 
 
 # lib in '../functions/'
-import functions.functions_diagnostic as ft
+import functions.functions_diagnostic_Train_vs_Test as ft
 import functions.functions_network_pytorch as fnp
 from sklearn.metrics import precision_recall_fscore_support
 import analyzer.model_analyzer as ma
@@ -77,11 +79,11 @@ if __name__=='__main__':
 
     ####### Set of parameters : #######
     # Lung : ETA = 600 Seed = 5
-    # Brain : ETA = 300 Seed = 
+    # Brain : ETA = 300 Seed = 5
     # Covid : ETA = 300 Seed = 5
     
     # Set seed
-    Seed = [5]
+    Seed = [4]
     ETA = 600   #Control feature selection
     
     
@@ -108,9 +110,11 @@ if __name__=='__main__':
 
 
     TIRO_FORMAT = True
-    file_name = 'LUNG.csv'
+#    file_name = 'LUNG.csv'
 #    file_name = 'COVID4.csv'
 #    file_name = "BRAIN_MID.csv"
+    file_name = "CytoNewE5105rn100Ttconnu.csv"
+    file_name2 = "CytoNewE5105rn100Ttinde2.csv"
    
 
 
@@ -164,8 +168,8 @@ if __name__=='__main__':
     PERFORM_MA = False
     
     # Scaling 
-    doScale = True 
-#    doScale = False
+#    doScale = True 
+    doScale = False
     
 
   
@@ -176,7 +180,8 @@ if __name__=='__main__':
 #------------ Main loop ---------
     # Load data    
 
-    X,Y,feature_name,label_name, patient_name, LFC_Rank = ft.ReadData(file_name, TIRO_FORMAT=TIRO_FORMAT, doScale = doScale) # Load files datas
+    X,Y,feature_name,label_name, patient_name, LFC_Rank, X_test, Y_test, patient_name_test = ft.ReadData(file_name, file_name2, TIRO_FORMAT=TIRO_FORMAT, doScale = doScale) # Load files datas
+    #X_test,Y_test,feature_name,label_name, patient_name_test, LFC_Rank = ft.ReadData(file_name2, TIRO_FORMAT=TIRO_FORMAT, doScale = doScale) # Load files datas
     
     #LFC_Rank.to_csv(outputPath+'/LFC_rank.csv')
         
@@ -184,7 +189,19 @@ if __name__=='__main__':
     class_len = len(label_name)
     print('Number of feature: {}, Number of class: {}'.format(feature_len,class_len ))
     
-    train_dl, test_dl, train_len, test_len, Ytest  = ft.CrossVal(X,Y, patient_name, BATCH_SIZE, seed=Seed[0])
+    #train_dl, test_dl, train_len, test_len, Ytest  = ft.CrossVal(X,Y, patient_name, BATCH_SIZE, seed=Seed[0])
+
+
+    dtrain = ft.LoadDataset(X, Y, patient_name)
+
+    train_dl = torch.utils.data.DataLoader(dtrain, batch_size=BATCH_SIZE,  shuffle=True)
+    dtest = ft.LoadDataset(X_test, Y_test, patient_name_test)
+    #_, test_set = torch.utils.data.random_split(dtest, [0])
+    test_dl = torch.utils.data.DataLoader(dtest, batch_size=1)
+    
+    train_len = len(dtrain)
+    test_len = len(dtest)
+    Ytest= Y_test
 
     accuracy_train = np.zeros((nfold*len(Seed),class_len+1))
     accuracy_test = np.zeros((nfold*len(Seed),class_len+1))
@@ -411,7 +428,4 @@ if __name__=='__main__':
         plt.plot(loss_with_proj, label = 'With projection ')
         plt.legend()
         plt.show()
-    if SAVE_FILE:
-        pass
-        #df_acctest.to_csv('{}{}_acctest.csv'.format(outputPath,str(TYPE_PROJ_NAME)),sep=';') 
-        #df_topGenes.to_csv('{}{}_topGenes_{}_{}.csv'.format(outputPath,str(TYPE_PROJ_NAME),method,str(nb_samples) ),sep=';')
+

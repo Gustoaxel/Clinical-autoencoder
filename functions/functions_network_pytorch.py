@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-import functions.functions_diagnostic as ft
+import functions.functions_torch as ft
 
 import torch
 import torch.nn as nn
